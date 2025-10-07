@@ -41,6 +41,9 @@ qa = RetrievalQA.from_chain_type(
 
 @app.post("/upload_docs/")
 async def upload_docs(files: List[UploadFile] = File(...)):
+    """
+    Upload and index documents (PDF, DOCX) to the vector store.
+    """
     documents = []
     for file in files:
         file_path = os.path.join(settings.UPLOAD_DIR, file.filename)
@@ -71,19 +74,12 @@ async def upload_docs(files: List[UploadFile] = File(...)):
     return {"message": f"Uploaded and indexed {len(docs_chunks)} chunks."}
 
 
-# @app.post("/ask/")
-# async def ask_question(question: str):
-#     result = qa({"query": question})
-#     answer = result["result"]
-#     sources = [
-#         {"source": doc.metadata.get("source", "unknown"), "snippet": doc.page_content[:200]}
-#         for doc in result.get("source_documents", [])
-#     ]
-#     return {"answer": answer, "sources": sources}
-
-
 @app.post("/ask/")
 async def ask_question(question: str):
+    """
+    Ask a question and get an answer from the indexed documents.
+    The question and answer are also stored in the PostgreSQL database.
+    """
     result = qa({"query": question})
     answer = result["result"]
     chat = Chat(question=question, answer=answer)
@@ -92,3 +88,84 @@ async def ask_question(question: str):
         session.commit()
         session.refresh(chat)
     return {"id": chat.id, "answer": answer}
+
+
+# @app.delete("/clear_chroma/")
+# async def clear_chroma_db():
+#     """
+#     Clears all existing data in the Chroma vector database.
+#     Useful when uploading new policy documents.
+#     """
+#     db_path = settings.VECTORSTORE_DIR
+
+#     if os.path.exists(db_path):
+#         shutil.rmtree(db_path)
+#         os.makedirs(db_path, exist_ok=True)
+
+#         # Reinitialize Chroma store after clearing
+#         global vectorstore, qa
+#         vectorstore = Chroma(
+#             persist_directory=settings.VECTORSTORE_DIR,
+#             embedding_function=embeddings,
+#             collection_name=settings.COLLECTION_NAME,
+#         )
+
+#         qa = RetrievalQA.from_chain_type(
+#             llm=llm,
+#             chain_type="stuff",
+#             retriever=vectorstore.as_retriever(search_kwargs={"k": 4}),
+#             return_source_documents=True,
+#         )
+
+#         return {"message": "✅ ChromaDB cleared successfully."}
+#     else:
+#         os.makedirs(db_path, exist_ok=True)
+#         return {"message": "⚠️ No ChromaDB found. Created a new one."}
+    
+
+
+
+
+@app.delete("/clear_chroma/")
+async def clear_chroma_db():
+    """
+    Clears all existing data in the Chroma vector database.
+    Useful when uploading new policy documents.
+    """
+    # MOVE GLOBAL TO THE TOP
+    global vectorstore, qa 
+    
+    db_path = settings.VECTORSTORE_DIR
+    if os.path.exists(db_path):
+        shutil.rmtree(db_path)
+        os.makedirs(db_path, exist_ok=True)
+        
+        # Now you can safely re-assign the global variables
+        vectorstore = Chroma(
+            persist_directory=settings.VECTORSTORE_DIR,
+            embedding_function=embeddings,
+            collection_name=settings.COLLECTION_NAME,
+        )
+        qa = RetrievalQA.from_chain_type(
+            llm=llm,
+            chain_type="stuff",
+            retriever=vectorstore.as_retriever(search_kwargs={"k": 4}),
+            return_source_documents=True,
+        )
+        return {"message": "✅ ChromaDB cleared successfully."}
+    else:
+        # Reinitialize the globals in the else block too
+        os.makedirs(db_path, exist_ok=True)
+        vectorstore = Chroma(
+            persist_directory=settings.VECTORSTORE_DIR,
+            embedding_function=embeddings,
+            collection_name=settings.COLLECTION_NAME,
+        )
+        qa = RetrievalQA.from_chain_type(
+            llm=llm,
+            chain_type="stuff",
+            retriever=vectorstore.as_retriever(search_kwargs={"k": 4}),
+            return_source_documents=True,
+        )
+        return {"message": "⚠️ No ChromaDB found. Created a new one."}    
+

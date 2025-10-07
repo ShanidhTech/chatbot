@@ -3,6 +3,10 @@ from functools import lru_cache
 
 
 class Settings:
+    """
+    Application settings loaded from environment variables.
+    Uses python-decouple to manage environment variables.
+    """
     GOOGLE_API_KEY: str = config('GOOGLE_API_KEY')
     GEMINI_API_KEY: str = config('GEMINI_API_KEY')
     VECTORSTORE_DIR: str = config('VECTORSTORE_DIR')

@@ -2,3 +2,4 @@ venv/
 *.pyc
 alembic/versions/*
 chroma_db/*
+data/*
