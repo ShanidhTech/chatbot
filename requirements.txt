@@ -1,0 +1,17 @@
+chromadb==1.1.1
+docx2txt==0.9
+fastapi==0.118.0
+google-generativeai==0.8.5
+langchain==0.3.27
+langchain-chroma==0.2.6
+langchain-community==0.3.30
+langchain-google-genai==2.0.10
+nest-asyncio==1.6.0
+psycopg2-binary==2.9.10
+pyngrok==7.4.0
+pypdf==6.1.1
+python-decouple-3.8
+python-multipart==0.0.20
+sqlmodel==0.0.25
+uvicorn==0.37.0
+
