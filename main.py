@@ -1,8 +1,7 @@
 import os
 import shutil
 from typing import List
-from fastapi import FastAPI, UploadFile, File
-from db import get_session
+from fastapi import FastAPI, UploadFile, File, Depends
 from langchain_community.document_loaders.pdf import PyPDFLoader
 from langchain_community.document_loaders.word_document import Docx2txtLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -10,23 +9,51 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGener
 from langchain_chroma import Chroma
 from langchain.chains import RetrievalQA
 from config import settings
-
-
-from fastapi import Depends
+from db import get_db
 from models import Chat
-from sqlmodel import Session
+from datetime import datetime
 
-# ========== FASTAPI ==========
+
 app = FastAPI(title="Document QA API with Gemini")
 
 
-# ========== LangChain Setup ==========
+# ======== LangChain Setup ========
+# embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
+# vectorstore = Chroma(
+#     persist_directory=settings.VECTORSTORE_DIR,
+#     embedding_function=embeddings,
+#     collection_name=settings.COLLECTION_NAME
+# )
+
+# llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=0)
+# qa = RetrievalQA.from_chain_type(
+#     llm=llm,
+#     chain_type="stuff",
+#     retriever=vectorstore.as_retriever(search_kwargs={"k": 4}),
+#     return_source_documents=True
+# )
+
+
 embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
-vectorstore = Chroma(
-    persist_directory=settings.VECTORSTORE_DIR,
-    embedding_function=embeddings,
-    collection_name=settings.COLLECTION_NAME
-)
+
+# Ensure persist directory exists
+os.makedirs(settings.VECTORSTORE_DIR, exist_ok=True)
+
+# Create or get collection safely
+try:
+    vectorstore = Chroma(
+        persist_directory=settings.VECTORSTORE_DIR,
+        embedding_function=embeddings,
+        collection_name=settings.COLLECTION_NAME,
+    )
+except Exception as e:
+    # If collection/table missing, reinitialize empty
+    vectorstore = Chroma(
+        persist_directory=settings.VECTORSTORE_DIR,
+        embedding_function=embeddings,
+        collection_name=settings.COLLECTION_NAME,
+    )
+    vectorstore.persist()
 
 llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=0)
 qa = RetrievalQA.from_chain_type(
@@ -37,12 +64,12 @@ qa = RetrievalQA.from_chain_type(
 )
 
 
-# ========== ROUTES ==========
+# ======== ROUTES ========
 
 @app.post("/upload_docs/")
 async def upload_docs(files: List[UploadFile] = File(...)):
     """
-    Upload and index documents (PDF, DOCX) to the vector store.
+    Upload and index documents.
     """
     documents = []
     for file in files:
@@ -75,61 +102,46 @@ async def upload_docs(files: List[UploadFile] = File(...)):
 
 
 @app.post("/ask/")
-async def ask_question(question: str):
+async def ask_question(question: str, db=Depends(get_db)):
     """
     Ask a question and get an answer from the indexed documents.
-    The question and answer are also stored in the PostgreSQL database.
+    Also store the Q&A pair in MongoDB.
     """
     result = qa({"query": question})
     answer = result["result"]
-    chat = Chat(question=question, answer=answer)
-    with next(get_session()) as session:
-        session.add(chat)
-        session.commit()
-        session.refresh(chat)
-    return {"id": chat.id, "answer": answer}
+
+    chat = Chat(question=question, answer=answer, created_at=datetime.utcnow())
+    chat_dict = chat.dict(by_alias=True)
+
+    # Insert into MongoDB
+    await db["chat"].insert_one(chat_dict)
+
+    return {"id": str(chat_dict["_id"]), "answer": answer}
 
 
 @app.delete("/clear_chroma/")
 async def clear_chroma_db():
     """
-    Clears all existing data in the Chroma vector database.
-    Useful when uploading new policy documents.
+    Clear and reinitialize the ChromaDB.
     """
-    # MOVE GLOBAL TO THE TOP
-    global vectorstore, qa 
+    global vectorstore, qa
     
     db_path = settings.VECTORSTORE_DIR
     if os.path.exists(db_path):
         shutil.rmtree(db_path)
         os.makedirs(db_path, exist_ok=True)
-        
-        # Now you can safely re-assign the global variables
-        vectorstore = Chroma(
-            persist_directory=settings.VECTORSTORE_DIR,
-            embedding_function=embeddings,
-            collection_name=settings.COLLECTION_NAME,
-        )
-        qa = RetrievalQA.from_chain_type(
-            llm=llm,
-            chain_type="stuff",
-            retriever=vectorstore.as_retriever(search_kwargs={"k": 4}),
-            return_source_documents=True,
-        )
-        return {"message": "ChromaDB cleared successfully."}
     else:
-        # Reinitialize the globals in the else block too
         os.makedirs(db_path, exist_ok=True)
-        vectorstore = Chroma(
-            persist_directory=settings.VECTORSTORE_DIR,
-            embedding_function=embeddings,
-            collection_name=settings.COLLECTION_NAME,
-        )
-        qa = RetrievalQA.from_chain_type(
-            llm=llm,
-            chain_type="stuff",
-            retriever=vectorstore.as_retriever(search_kwargs={"k": 4}),
-            return_source_documents=True,
-        )
-        return {"message": "No ChromaDB found. Created a new one."}    
-
+        
+    vectorstore = Chroma(
+        persist_directory=settings.VECTORSTORE_DIR,
+        embedding_function=embeddings,
+        collection_name=settings.COLLECTION_NAME,
+    )
+    qa = RetrievalQA.from_chain_type(
+        llm=llm,
+        chain_type="stuff",
+        retriever=vectorstore.as_retriever(search_kwargs={"k": 4}),
+        return_source_documents=True,
+    )
+    return {"message": "ChromaDB cleared and reinitialized successfully."}

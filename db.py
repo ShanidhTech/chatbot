@@ -1,12 +1,11 @@
-from sqlmodel import SQLModel, create_engine, Session
+from motor.motor_asyncio import AsyncIOMotorClient
 from config import settings
 
-DATABASE_URL = settings.DATABASE_URL
-engine = create_engine(DATABASE_URL, echo=True)
+client = AsyncIOMotorClient(settings.MONGO_URI)
+db = client[settings.MONGO_DB_NAME]
 
-def get_session():
+def get_db():
     """
-    Get a new SQLAlchemy session.
+    Get the MongoDB database instance.
     """
-    with Session(engine) as session:
-        yield session
+    return db

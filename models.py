@@ -1,15 +1,33 @@
 from datetime import datetime
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import BigInteger, String, Column, DateTime
+from pydantic import BaseModel, Field
+from bson import ObjectId
 
-Base = declarative_base()
 
-class Chat(Base):
+class PyObjectId(ObjectId):
     """
-    SQLAlchemy model for storing chat interactions.
+    Custom ObjectId type for Pydantic models.
     """
-    __tablename__ = "chat"
-    id = Column(BigInteger, primary_key=True, index=True)
-    question = Column(String, nullable=False)
-    answer = Column(String, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=True)
+    @classmethod
+    def __get_validators__(cls):
+        yield cls.validate
+
+    @classmethod
+    def validate(cls, v):
+        if not ObjectId.is_valid(v):
+            raise ValueError("Invalid ObjectId")
+        return ObjectId(v)
+
+
+class Chat(BaseModel):
+    """
+    Chat model for storing question and answer pairs.
+    """
+    id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")
+    question: str
+    answer: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    class Config:
+        allow_population_by_field_name = True
+        json_encoders = {ObjectId: str}
+        arbitrary_types_allowed = True

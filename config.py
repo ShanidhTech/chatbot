@@ -13,7 +13,8 @@ class Settings:
     COLLECTION_NAME: str = config('COLLECTION_NAME')
     UPLOAD_DIR: str = config('UPLOAD_DIR')
 
-    DATABASE_URL: str = config('DATABASE_URL')
+    MONGO_URI: str = config('MONGO_URI')
+    MONGO_DB_NAME: str = config('MONGO_DB_NAME')
 
     def __init__(self):
         pass
