@@ -95,36 +95,32 @@ async def ask_question(question: str, db=Depends(get_db)):
 @app.delete("/clear_chroma/")
 async def clear_chroma_db():
     """
-    Clear ChromaDB safely.
+    Completely clear ChromaDB collection safely and reinitialize QA chain.
     """
     global vectorstore, qa
 
-    db_path = settings.VECTORSTORE_DIR
-
-    # Step 1: Close and dereference old client
     try:
-        vectorstore._client.persist()
-        vectorstore._client = None
-        vectorstore = None
-        qa = None
+        # Access the underlying Chroma collection
+        collection = vectorstore._collection
+
+        # Delete all data in the collection (reset it)
+        collection.delete(where={"id": {"$ne": ""}})  # remove all docs (if version supports filtering)
     except Exception:
-        pass
+        try:
+            # If delete(where=...) is restricted, just drop the collection and recreate
+            client = vectorstore._client
+            client.delete_collection(name=settings.COLLECTION_NAME)
+            vectorstore = client.create_collection(name=settings.COLLECTION_NAME)
+        except Exception:
+            pass
 
-    # Step 2: Delete old folder
-    if os.path.exists(db_path):
-        shutil.rmtree(db_path)
-
-    # Step 3: Recreate folder
-    os.makedirs(db_path, exist_ok=True)
-
-    # Step 4: Reinitialize vectorstore
+    # --- Reinitialize the LangChain Chroma wrapper ---
     vectorstore = Chroma(
         persist_directory=settings.VECTORSTORE_DIR,
         embedding_function=embeddings,
-        collection_name=settings.COLLECTION_NAME
+        collection_name=settings.COLLECTION_NAME,
     )
 
-    # Step 5: Reinitialize QA retriever
     qa = RetrievalQA.from_chain_type(
         llm=llm,
         chain_type="stuff",
@@ -133,5 +129,4 @@ async def clear_chroma_db():
     )
 
     return {"message": "ChromaDB cleared and reinitialized successfully."}
-
 
