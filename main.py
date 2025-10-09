@@ -13,6 +13,8 @@ from db import get_db
 from models import Chat
 from datetime import datetime
 
+from langchain.prompts import PromptTemplate
+
 app = FastAPI(title="Document QA API with Gemini")
 
 # ======== LangChain Setup ========
@@ -30,10 +32,38 @@ def init_vectorstore():
 
 # Initial vectorstore and QA chain
 vectorstore = init_vectorstore()
+
+# Custom prompt template
+prompt_template = """
+You are a helpful assistant answering strictly based on the provided context.
+If the context does not contain the answer, respond with: "I’m sorry, I don’t have that information in the documents."
+
+Context:
+{context}
+
+Question:
+{question}
+
+Answer:
+"""
+
+# Basic QA chain without custom prompt
+# qa = RetrievalQA.from_chain_type(
+#     llm=llm,
+#     chain_type="stuff",
+#     retriever=vectorstore.as_retriever(search_kwargs={"k": 8}),
+#     return_source_documents=True
+# )
+
+# Using custom prompt template in the QA chain
 qa = RetrievalQA.from_chain_type(
     llm=llm,
     chain_type="stuff",
-    retriever=vectorstore.as_retriever(search_kwargs={"k": 4}),
+    retriever=vectorstore.as_retriever(search_kwargs={"k": 8}),
+    chain_type_kwargs={"prompt": PromptTemplate(
+        input_variables=["context", "question"],
+        template=prompt_template
+    )},
     return_source_documents=True
 )
 
