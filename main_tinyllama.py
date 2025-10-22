@@ -1,10 +1,11 @@
 import os
+import shutil
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.chains import RetrievalQA
-from langchain.vectorstores import Chroma
-from langchain.embeddings import SentenceTransformerEmbeddings
-from langchain.llms import Ollama  # Replace with your LLM
+from langchain_community.vectorstores import Chroma
+from langchain_community.embeddings.ollama import OllamaEmbeddings
+from langchain.llms import Ollama
 from langchain.document_loaders import PyPDFLoader, Docx2txtLoader, TextLoader, CSVLoader, JSONLoader
 
 # ======================================================
@@ -20,12 +21,20 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 # ======================================================
 # FASTAPI APP
 # ======================================================
-app = FastAPI(title="RAG Chatbot: all-MiniLM-L6-v2 Embeddings")
+app = FastAPI(title="Local RAG Chatbot: Ollama Embeddings + Mistral")
 
 # ======================================================
 # EMBEDDINGS + VECTORSTORE
 # ======================================================
-embedding = SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
+# Use Mistral embeddings (4096-dim)
+
+# embedding = OllamaEmbeddings(model="tinyllama")
+
+# OLLAMA_HOST = "http://ollama:11434"
+
+embedding = OllamaEmbeddings(model="tinyllama")
+#for docker
+# embedding = OllamaEmbeddings(model="tinyllama", base_url=OLLAMA_HOST)
 
 vectorstore = Chroma(
     persist_directory=VECTORSTORE_DIR,
@@ -36,8 +45,8 @@ vectorstore = Chroma(
 # ======================================================
 # LLM
 # ======================================================
-llm = Ollama(model="tinyllama")  # Replace with your LLM if needed
-
+llm = Ollama(model="tinyllama")  # Local Mistral 7B
+# llm = Ollama(model="tinyllama", base_url=OLLAMA_HOST)
 # ======================================================
 # Helper function to load documents
 # ======================================================
@@ -84,34 +93,16 @@ async def upload_file(file: UploadFile = File(...)):
 async def ask_question(query: str):
     try:
         retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
-        docs = retriever.get_relevant_documents(query)
-
-        # Check if any document is relevant
-        # Optionally, use a similarity threshold (0.3 recommended)
-        threshold = 0.3
-        relevant_docs = [doc for doc in docs if getattr(doc, "score", 1.0) >= threshold]
-
-        if not relevant_docs:
-            # No relevant documents found → fallback
-            return {"answer": "I don’t know based on the uploaded documents.", "sources": []}
-
-        # Only run LLM if relevant docs exist
         qa_chain = RetrievalQA.from_chain_type(
             llm=llm,
             retriever=retriever,
             return_source_documents=True,
         )
         result = qa_chain({"query": query})
-
-        # Fallback if LLM returned empty
-        if not result["result"].strip():
-            return {"answer": "I don’t know based on the uploaded documents.", "sources": []}
-
         return {
             "answer": result["result"],
             "sources": [doc.metadata.get("source", "N/A") for doc in result["source_documents"]],
         }
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -122,9 +113,12 @@ async def ask_question(query: str):
 async def clear_vectorstore():
     global vectorstore
     try:
-        all_ids = vectorstore._collection.get(ids=None)["ids"]
+        # Get all document IDs
+        all_ids = vectorstore._collection.get(ids=None)["ids"]  # returns list of IDs
+
         if all_ids:
             vectorstore._collection.delete(ids=all_ids)
+
         return {"message": "All documents cleared, vectorstore intact."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to clear documents: {str(e)}")
