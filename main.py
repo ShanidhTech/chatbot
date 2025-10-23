@@ -6,6 +6,7 @@ from langchain.vectorstores import Chroma
 from langchain.embeddings import SentenceTransformerEmbeddings
 from langchain.llms import Ollama  # Replace with your LLM
 from langchain.document_loaders import PyPDFLoader, Docx2txtLoader, TextLoader, CSVLoader, JSONLoader
+from langchain.prompts import PromptTemplate
 
 # ======================================================
 # CONFIGURATION
@@ -36,7 +37,9 @@ vectorstore = Chroma(
 # ======================================================
 # LLM
 # ======================================================
-llm = Ollama(model="tinyllama")  # Replace with your LLM if needed
+# llm = Ollama(model="tinyllama")  # Replace with your LLM if needed
+llm = Ollama(model="phi3:mini")
+
 
 # ======================================================
 # Helper function to load documents
@@ -83,37 +86,48 @@ async def upload_file(file: UploadFile = File(...)):
 @app.get("/ask")
 async def ask_question(query: str):
     try:
-        retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
-        docs = retriever.get_relevant_documents(query)
+        # Retrieve top 3 docs with scores
+        docs_and_scores = vectorstore.similarity_search_with_score(query, k=3)
 
-        # Check if any document is relevant
-        # Optionally, use a similarity threshold (0.3 recommended)
-        threshold = 0.3
-        relevant_docs = [doc for doc in docs if getattr(doc, "score", 1.0) >= threshold]
+        # Normalize scores to [0,1]
+        relevant_docs = [doc for doc, score in docs_and_scores if (score + 1) / 2 >= 0.3]
 
         if not relevant_docs:
-            # No relevant documents found → fallback
             return {"answer": "I don’t know based on the uploaded documents.", "sources": []}
 
-        # Only run LLM if relevant docs exist
+        # Custom prompt to restrict LLM to context only
+        custom_prompt = PromptTemplate.from_template("""
+        You are a helpful assistant that answers ONLY based on the provided context below.
+        If the answer is not in the context, reply exactly:
+        "I don’t know based on the uploaded documents."
+
+        Context:
+        {context}
+
+        Question:
+        {question}
+
+        Answer:
+        """)
+
+        retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
         qa_chain = RetrievalQA.from_chain_type(
             llm=llm,
             retriever=retriever,
+            chain_type_kwargs={"prompt": custom_prompt},
             return_source_documents=True,
         )
+
         result = qa_chain({"query": query})
 
-        # Fallback if LLM returned empty
-        if not result["result"].strip():
-            return {"answer": "I don’t know based on the uploaded documents.", "sources": []}
-
         return {
-            "answer": result["result"],
+            "answer": result["result"].strip(),
             "sources": [doc.metadata.get("source", "N/A") for doc in result["source_documents"]],
         }
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 # ======================================================
 # Clear vectorstore
