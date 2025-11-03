@@ -1,59 +1,27 @@
-version: '3.8'
+version: "3.9"
 
 services:
-  # ----------------------------------------------------------------
-  # 1. RAG FASTAPI APPLICATION
-  # ----------------------------------------------------------------
-  rag-app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: rag-fastapi-app
+  rag-chatbot:
+    build: .
+    container_name: rag_chatbot
     ports:
-      - "8080:6000"  # Use browser-safe port 8080 on the host
+      - "7000:8000"
     volumes:
-      - ./data:/app/data
       - ./chroma_db:/app/chroma_db
-    # CRITICAL: Wait until Ollama passes its health check
+      - ./data:/app/data
     depends_on:
-      ollama:
-        condition: service_healthy
-    restart: unless-stopped
-    networks:
-      - rag-network
+      - ollama
+    environment:
+      - OLLAMA_HOST=http://ollama:11434  # internal docker hostname
 
-  # ----------------------------------------------------------------
-  # 2. OLLAMA SERVER (with Health Check)
-  # ----------------------------------------------------------------
   ollama:
     image: ollama/ollama:latest
     container_name: ollama
+    ports:
+      - "11500:11434"  # <--- host:container mapping (host port changed)
     volumes:
-      - ollama_models:/root/.ollama
+      - ollama_data:/root/.ollama
     restart: unless-stopped
-    networks:
-      - rag-network
-      
-    # ----------------------------------------------------
-    # FIX: Use entrypoint to correctly execute the shell
-    # ----------------------------------------------------
-    entrypoint: ["/bin/sh", "-c"]
-    command: 
-      - "ollama serve & ollama pull tinyllama && wait"
-    # CRITICAL: Define the health check to ensure the API is ready
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 20s # Give extra time for the model pull to start
-      
-# ----------------------------------------------------------------
-# VOLUMES & NETWORKS
-# ----------------------------------------------------------------
-volumes:
-  ollama_models:
 
-networks:
-  rag-network:
-    driver: bridge
+volumes:
+  ollama_data:

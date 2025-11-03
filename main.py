@@ -7,6 +7,7 @@ from langchain.embeddings import SentenceTransformerEmbeddings
 from langchain.llms import Ollama  # Replace with your LLM
 from langchain.document_loaders import PyPDFLoader, Docx2txtLoader, TextLoader, CSVLoader, JSONLoader
 from langchain.prompts import PromptTemplate
+from config import settings
 
 # ======================================================
 # CONFIGURATION
@@ -37,8 +38,14 @@ vectorstore = Chroma(
 # ======================================================
 # LLM
 # ======================================================
-# llm = Ollama(model="tinyllama")  # Replace with your LLM if needed
-llm = Ollama(model="phi3:mini")
+
+# llm = Ollama(model="phi3:mini")
+# llm = Ollama(model="mistral:latest") 
+llm = Ollama(
+    model="phi3:mini",
+    # model="mistral:latest",
+    base_url=settings.OLLAMA_BASE_URL
+)
 
 
 # ======================================================

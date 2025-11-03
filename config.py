@@ -16,6 +16,8 @@ class Settings:
     MONGO_URI: str = config('MONGO_URI')
     MONGO_DB_NAME: str = config('MONGO_DB_NAME')
 
+    OLLAMA_BASE_URL: str = config('OLLAMA_BASE_URL')
+
     def __init__(self):
         pass
 
