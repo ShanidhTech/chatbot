@@ -29,11 +29,19 @@ app = FastAPI(title="RAG Chatbot: all-MiniLM-L6-v2 Embeddings")
 # ======================================================
 embedding = SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
 
-vectorstore = Chroma(
-    persist_directory=VECTORSTORE_DIR,
-    collection_name=COLLECTION_NAME,
-    embedding_function=embedding,
-)
+# vectorstore = Chroma(
+#     persist_directory=VECTORSTORE_DIR,
+#     collection_name=COLLECTION_NAME,
+#     embedding_function=embedding,
+# )
+
+def get_vectorstore(org_id: str):
+    print(f"Using vectorstore for org_id: {COLLECTION_NAME}_{org_id}")
+    return Chroma(
+        persist_directory=VECTORSTORE_DIR,
+        collection_name=f"{COLLECTION_NAME}_{org_id}",
+        embedding_function=embedding,
+    )
 
 # ======================================================
 # LLM
@@ -71,8 +79,9 @@ def load_document(file_path: str):
 # Upload and index files
 # ======================================================
 @app.post("/upload")
-async def upload_file(file: UploadFile = File(...)):
+async def upload_file(org_id: str, file: UploadFile = File(...)):
     try:
+        vectorstore = get_vectorstore(org_id)
         file_path = os.path.join(UPLOAD_DIR, file.filename)
         with open(file_path, "wb") as f:
             f.write(await file.read())
@@ -91,8 +100,9 @@ async def upload_file(file: UploadFile = File(...)):
 # Ask questions
 # ======================================================
 @app.get("/ask")
-async def ask_question(query: str):
+async def ask_question(org_id: str, query: str):
     try:
+        vectorstore = get_vectorstore(org_id)
         # Retrieve top 3 docs with scores
         docs_and_scores = vectorstore.similarity_search_with_score(query, k=3)
 
@@ -140,12 +150,13 @@ async def ask_question(query: str):
 # Clear vectorstore
 # ======================================================
 @app.delete("/clear")
-async def clear_vectorstore():
-    global vectorstore
+async def clear_vectorstore(org_id: str):
     try:
-        all_ids = vectorstore._collection.get(ids=None)["ids"]
-        if all_ids:
-            vectorstore._collection.delete(ids=all_ids)
-        return {"message": "All documents cleared, vectorstore intact."}
+        vectorstore = get_vectorstore(org_id)
+        collection = vectorstore._collection
+        ids = collection.get(ids=None)["ids"]
+        if ids:
+            collection.delete(ids=ids)
+        return {"message": f"All documents deleted for org_id '{org_id}'"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to clear documents: {str(e)}")
